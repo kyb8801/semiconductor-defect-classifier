@@ -3,7 +3,7 @@
 반도체 공정 센서 데이터(SECOM)를 활용한 불량 자동 분류 AI 포트폴리오
 
 **Author:** YoungBum Kim (김용범) | PhD in Energy Science  
-**Period:** 2026.03 ~ 2026.05  
+**Period:** 2026.03 ~ 2026.04  
 **Target:** ASML / KLA / Samsung Electronics AI Engineer Position
 
 ---
@@ -20,26 +20,56 @@
 - **SECOM Dataset** (UCI Machine Learning Repository)
 - 1,567개 웨이퍼 × 590개 공정 센서
 - 클래스 불균형: 정상 93.4% / 불량 6.6%
-- 전처리: 결측값 50% 이상 센서 제거 (590 → 562개)
 
 ---
 
-## 🧪 Experiments & Results
+## 🧪 전체 실험 결과 (K-fold 기준)
 
-| 방법 | 불량 F1 | 불량 탐지 | 비고 |
-|------|---------|----------|------|
-| 기본 MLP (562개 센서) | 0.00 | 0/15 | 베이스라인 |
-| + Class Weight (T=0.5) | 0.09 | 1/15 | 불균형 보정 |
-| + Class Weight (T=0.2) | 0.28 | 8/15 | Threshold 조정 |
-| + SMOTE (T=0.2) | 0.25 | 7/15 | 오버샘플링 |
-| ResMLP + Skip Connection | 0.26 | 7/15 | ResNet 아이디어 적용 |
-| Focal Loss | 0.23 | 5/15 | 어려운 샘플 집중 |
-| PCA 50개 + Class Weight | 0.25 | 9/15 | 차원 축소 |
-| **상관분석 Top 20 + Class Weight** | **0.29** | **11/15** | **최고 성능** |
+| 모델 | K-fold F1 | ROC-AUC | 비고 |
+|------|-----------|---------|------|
+| **MLP Optuna** | **0.291** | **0.853** | 최고 성능! |
+| XGBoost Optuna | 0.288 | 0.787 | |
+| Random Forest | 0.261 | 0.779 | |
+| XGBoost 기본 | 0.252 | 0.787 | 안정적 |
+| Ensemble MLP+XGB | 0.247 | - | |
+| LightGBM | 0.222 | 0.765 | |
+| SVM | 0.178 | 0.742 | 고차원 약함 |
 
-### 핵심 인사이트
-> 562개 센서 전부 사용하는 것보다 **불량과 상관관계 높은 센서 20개만 선택**하는 것이 더 효과적.  
-> 도메인 지식 기반 Feature Selection → 노이즈 제거 → 성능 향상
+---
+
+## 🔑 Key Techniques
+
+**불균형 처리:**
+- Class Weight, SMOTE, Threshold 조정, Focal Loss
+
+**Feature Engineering:**
+- 상관분석 Top 20 센서 선택
+- PCA 차원 축소
+
+**모델:**
+- MLP, ResMLP (Skip Connection), XGBoost, LightGBM, RF, SVM
+- Optuna 하이퍼파라미터 자동 튜닝
+- K-fold Cross Validation
+
+**해석:**
+- Grad-CAM (센서 중요도)
+- PDP (센서 임계값 시각화)
+- PR Curve + ROC-AUC
+- Error Analysis (놓친 불량 심층 분석)
+- Calibration (확률 보정)
+
+**앙상블:**
+- Weighted Ensemble, Stacking
+
+---
+
+## 💡 핵심 인사이트
+
+1. **센서_59번**이 상관분석/Grad-CAM/XGBoost 모두에서 상위권 → 가장 신뢰할 수 있는 핵심 센서
+2. **Optuna 적용** 후 성능 향상: MLP 0.252 → 0.291 (+15%), XGBoost 0.252 → 0.288 (+14%)
+3. **K-fold 기준** 단순 Val 평가(F1=0.36)는 과대평가 → 실제 성능(F1=0.252)
+4. **PDP 분석**: 센서_21번 -6000, 센서_59번 10 이상이면 불량 위험!
+5. **Error Analysis**: 놓친 불량 3개 중 1개는 정상과 구분 불가 → 추가 센서 필요
 
 ---
 
@@ -47,34 +77,8 @@
 ```
 MLP Baseline:      562 → 256 → 64 → 2
 ResMLP:            562 → [256+skip] → [64+skip] → 2
-Correlation Top20: 20  → 64  → 32 → 2  ← Best Model
-```
-
----
-
-## 🔑 Key Techniques
-
-- **Class Weight** (1.0 / 5.0): 불량 클래스 벌점 5배
-- **Threshold 조정** (0.5 → 0.3): 탐지 민감도 향상
-- **Early Stopping** (patience=10): 과적합 방지
-- **SMOTE**: 불량 데이터 보간 증강 (73 → 1,023개)
-- **Skip Connection**: Vanishing Gradient 방지
-- **Correlation Analysis**: 불량 연관 센서 Top 20 선택
-- **PCA**: 50개 주성분으로 차원 축소 (분산 62.1% 보존)
-
----
-
-## 📁 Project Structure
-```
-semiconductor-defect-classifier/
-├── data/
-│   ├── uci-secom.csv          # 원본 데이터
-│   ├── X_train.npy            # 전처리된 학습 데이터
-│   ├── X_val.npy              # 검증 데이터
-│   └── X_test.npy             # 테스트 데이터
-├── week2_mlp_secom.ipynb      # MLP + Class Weight + SMOTE
-├── week2_cnn_basic.ipynb      # CNN 기초 이론
-└── README.md
+Correlation Top20: 20  → 64  → 32 → 2
+MLP Optuna:        20  → 154 → 42 → 2  ← Best Model
 ```
 
 ---
@@ -87,13 +91,41 @@ conda activate sem-defect
 jupyter notebook
 ```
 
+**Streamlit 웹앱 실행:**
+```bash
+streamlit run app.py
+```
+
+→ http://localhost:8501 에서 실시간 불량 판정 데모!
+
+---
+
+## 📁 Project Structure
+```
+semiconductor-defect-classifier/
+├── data/
+│   ├── uci-secom.csv
+│   ├── X_train.npy / X_val.npy / X_test.npy
+├── models/
+│   ├── xgb_best.pkl       # XGBoost Optuna 최적 모델
+│   ├── mlp_best.pth       # MLP Optuna 최적 모델
+│   ├── calibrator.pkl     # Calibration 모델
+│   ├── imputer.pkl        # 결측값 처리
+│   ├── scaler.pkl         # 정규화
+│   └── top_features.pkl   # Top 20 센서 목록
+├── app.py                 # Streamlit 웹앱
+├── week2_mlp_secom.ipynb  # MLP + 불균형 처리
+├── week3_advanced.ipynb   # XGBoost + 고급 분석
+└── README.md
+```
+
 ---
 
 ## 📈 Next Steps
 
-- [ ] Grad-CAM 시각화: 어떤 센서가 불량 판단에 중요한가?
-- [ ] Streamlit 웹앱 배포 (실시간 불량 분류 데모)
+- [ ] NSOM MoSe₂ 하이퍼스펙트럴 데이터 적용
 - [ ] 논문 Draft (Ultramicroscopy / MST)
+- [ ] Streamlit Cloud 배포
 
 ---
 
